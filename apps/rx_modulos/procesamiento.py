@@ -2,6 +2,7 @@
 import base64
 import io
 import os
+from functools import lru_cache
 
 import numpy as np
 from PIL import Image
@@ -41,34 +42,30 @@ CLIP_ESCALA_OPENCV = 256.0
 
 
 # ============================================================
-# CARGA Y CONVERSIÓN DE IMÁGENES
+# CARGA Y CONVERSIÓN DE IMÁGENES (CON CACHÉ LRU)
 # ============================================================
 
-def decodificar_imagen(contents):
+@lru_cache(maxsize=4)
+def _decodificar_imagen_cached(contents):
     """
     Convierte una imagen cargada mediante dcc.Upload
-    en una matriz NumPy en escala de grises.
+    en una matriz NumPy en escala de grises (con memoización y límite de 20MB).
     """
-
-    if contents is None:
+    if contents is None or len(contents) > int(20 * 1024 * 1024 * 1.37):
         return None
 
     try:
         _, contenido = contents.split(",", 1)
-
         datos = base64.b64decode(contenido)
-
-        imagen = Image.open(
-            io.BytesIO(datos)
-        ).convert("L")
-
-        return np.array(
-            imagen,
-            dtype=np.uint8
-        )
-
+        imagen = Image.open(io.BytesIO(datos)).convert("L")
+        return np.array(imagen, dtype=np.uint8)
     except Exception:
         return None
+
+
+def decodificar_imagen(contents):
+    arr = _decodificar_imagen_cached(contents)
+    return arr.copy() if arr is not None else None
 
 
 def convertir_grises(IM):
@@ -1653,8 +1650,8 @@ def registrar_callbacks(app):
         Input(
             "rx-upload",
             "contents"
-        )
-
+        ),
+        prevent_initial_call=True,
     )
     def guardar_imagen_original(contents):
 
@@ -2067,6 +2064,7 @@ def registrar_callbacks(app):
         # --------------------------------------------------------
 
         figura.update_layout(
+            uirevision=True,
             paper_bgcolor=THEME["bg_secondary"],
             plot_bgcolor=THEME["bg_secondary"],
 

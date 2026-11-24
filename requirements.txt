@@ -1,4 +1,4 @@
-dash>=2.14,<3.0
+dash>=2.14
 dash-bootstrap-components>=1.5.0
 numpy>=1.24
 scipy>=1.10
@@ -13,4 +13,4 @@ python-dotenv>=1.0
 huggingface_hub>=0.20
 pypdf>=3.17
 opencv-python-headless
-python-dotenv
+gunicorn>=21.2.0

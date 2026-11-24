@@ -10,6 +10,7 @@ imágenes de MRI con ecuaciones de señal reales (SE, GRE, IR, FLAIR, STIR, DWI)
 from __future__ import annotations
 
 import os
+from functools import lru_cache
 import numpy as np
 import scipy.ndimage as ndi
 
@@ -334,12 +335,18 @@ def etiquetas_cache(escenario: str = "sano") -> np.ndarray:
     return lab
 
 
-def corte_axial_parametros(escenario="sano", z_idx=None):
+@lru_cache(maxsize=16)
+def _corte_axial_parametros_cached(escenario="sano", z_idx=None):
     lab = etiquetas_cache(escenario)
     if z_idx is None:
         z_idx = int(lab.shape[2] * 0.47)
     lab2 = np.rot90(lab[:, :, z_idx])
     return lab2, mapas_parametricos(lab2)
+
+
+def corte_axial_parametros(escenario="sano", z_idx=None):
+    lab2, mapas = _corte_axial_parametros_cached(escenario, z_idx)
+    return lab2.copy(), {k: v.copy() for k, v in mapas.items()}
 
 
 def volumen_ejemplo(escenario="sano", secuencia="T1") -> np.ndarray:

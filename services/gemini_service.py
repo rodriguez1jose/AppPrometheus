@@ -167,6 +167,31 @@ class GeminiService:
         except Exception as error:
             return self._formatear_error(error, contexto="Texto")
 
+    def generar_reto_socratico(self, tema: str = "Tomografía Computarizada") -> str:
+        """Genera una pregunta socrática desafiante para defensa de laboratorio."""
+        prompt = (
+            f"Actúa como un profesor universitario senior de Imagenología Médica y Señales.\n"
+            f"Genera un reto conceptual desafiante sobre el tema: {tema}.\n"
+            f"La pregunta debe obligar al estudiante a relacionar los principios físicos o matemáticos "
+            f"(ej. Nyquist, Radon, Fourier, atenuación, filtros, Bloch) con los artefactos o calidad de imagen.\n"
+            f"Sé motivador y directo (máximo 100 palabras). Finaliza con la pregunta exacta a responder."
+        )
+        return self.generar_texto(prompt, usar_cache=False)
+
+    def evaluar_defensa_socratica(self, respuesta_estudiante: str, tema: str = "Tomografía Computarizada") -> str:
+        """Evalúa formativamente la respuesta del alumno con retroalimentación socrática."""
+        prompt = (
+            f"Actúa como un evaluador socrático experto y formativo en Imagenología Médica.\n"
+            f"Tema: {tema}.\n"
+            f"Respuesta del estudiante:\n\"{respuesta_estudiante}\"\n\n"
+            f"Proporciona una evaluación formativa estructurada con este formato exacto:\n"
+            f"1. **Nivel de Dominio**: (Excelente / Bueno / Parcial / Necesita Repaso)\n"
+            f"2. **Puntos Fuertes**: Lo que comprendió correctamente.\n"
+            f"3. **Aspecto a Mejorar**: Corrección técnica o física necesaria.\n"
+            f"4. **Pregunta de Profundización**: Una nueva pregunta breve para consolidar su razonamiento."
+        )
+        return self.generar_texto(prompt, usar_cache=False)
+
     # ─────────────────────────────────────────────────────────────────────────
     # ANÁLISIS MULTIMODAL (IMAGEN + TEXTO)
     # ─────────────────────────────────────────────────────────────────────────

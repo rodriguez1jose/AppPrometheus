@@ -30,7 +30,7 @@ def estilo(fig, alto=None, margen=None, leyenda=True):
         paper_bgcolor=FONDO,
         plot_bgcolor=FONDO,
         font=dict(family=FUENTE, color=TEXTO, size=12),
-        margin=margen or dict(l=10, r=10, t=36, b=10),
+        margin=margen or dict(l=50, r=16, t=36, b=38),
         hoverlabel=dict(bgcolor="#0f172a", bordercolor="#334155", font=dict(family=FUENTE, color="#f8fafc")),
         showlegend=leyenda,
         legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=11), orientation="h", yanchor="bottom", y=1.02, x=0),
@@ -38,8 +38,8 @@ def estilo(fig, alto=None, margen=None, leyenda=True):
     )
     if alto:
         fig.update_layout(height=alto)
-    fig.update_xaxes(gridcolor=REJILLA, zerolinecolor=REJILLA, linecolor="#1e293b")
-    fig.update_yaxes(gridcolor=REJILLA, zerolinecolor=REJILLA, linecolor="#1e293b")
+    fig.update_xaxes(gridcolor=REJILLA, zerolinecolor=REJILLA, linecolor="#1e293b", tickfont=dict(family=FUENTE, size=10, color=TENUE))
+    fig.update_yaxes(gridcolor=REJILLA, zerolinecolor=REJILLA, linecolor="#1e293b", tickfont=dict(family=FUENTE, size=10, color=TENUE))
     for a in fig.layout.annotations or []:
         a.font = dict(family=FUENTE, color=TEXTO, size=13)
     return fig
@@ -130,20 +130,48 @@ def series(t, ys: dict, titulo="", xlab="t [ms]", ylab="", alto=280, lineas_v=No
     for (x, txt, col) in (lineas_v or []):
         fig.add_vline(x=x, line=dict(color=col, width=1.4, dash="dash"), annotation_text=txt,
                       annotation_font=dict(color=col, size=11), annotation_position="top")
-    fig.update_xaxes(title_text=xlab)
-    fig.update_yaxes(title_text=ylab)
+    fig.update_xaxes(
+        title=dict(text=xlab, font=dict(family=FUENTE, size=11, color=TEXTO)),
+        showticklabels=True,
+        tickfont=dict(family=FUENTE, size=10, color=TENUE),
+        showgrid=True,
+        gridcolor=REJILLA,
+        zeroline=True,
+        zerolinecolor=REJILLA,
+    )
+    fig.update_yaxes(
+        title=dict(text=ylab, font=dict(family=FUENTE, size=11, color=TEXTO)),
+        showticklabels=True,
+        tickfont=dict(family=FUENTE, size=10, color=TENUE),
+        showgrid=True,
+        gridcolor=REJILLA,
+        zeroline=True,
+        zerolinecolor=REJILLA,
+    )
     if rango_y:
         fig.update_yaxes(range=rango_y)
     fig.update_layout(title=dict(text=titulo, x=0.01, font=dict(size=12, color=TEXTO)))
-    return estilo(fig, alto, margen=dict(l=10, r=10, t=36, b=10))
+    return estilo(fig, alto, margen=dict(l=54, r=18, t=36, b=42))
 
 
 def barras(nombres, valores, colores, titulo="", alto=240, ylab=""):
     fig = go.Figure(go.Bar(x=nombres, y=valores, marker_color=colores, text=[f"{v:.2f}" for v in valores],
                            textposition="outside", textfont=dict(size=11, color=TEXTO)))
-    fig.update_yaxes(title_text=ylab, range=[0, max(max(valores) * 1.25, 0.05)])
+    fig.update_xaxes(
+        showticklabels=True,
+        tickfont=dict(family=FUENTE, size=11, color=TEXTO),
+        showgrid=False,
+    )
+    fig.update_yaxes(
+        title=dict(text=ylab, font=dict(family=FUENTE, size=11, color=TEXTO)),
+        showticklabels=True,
+        tickfont=dict(family=FUENTE, size=10, color=TENUE),
+        showgrid=True,
+        gridcolor=REJILLA,
+        range=[0, max(max(valores) * 1.25, 0.05)],
+    )
     fig.update_layout(title=dict(text=titulo, x=0.01, font=dict(size=12, color=TEXTO)))
-    return estilo(fig, alto, leyenda=False, margen=dict(l=10, r=10, t=36, b=10))
+    return estilo(fig, alto, leyenda=False, margen=dict(l=52, r=16, t=36, b=36))
 
 
 def _rgba(hexcol, a):

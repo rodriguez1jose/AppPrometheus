@@ -10,9 +10,30 @@ def home_layout():
     """Retorna la vista principal con los dos módulos raíz: SyS e Imagenología."""
     return html.Div(
         [
-            # Barra superior con Switch de Tema
+            # Barra superior con Switch de Tema y Acceso a Panel Docente
             html.Div(
                 [
+                    dcc.Link(
+                        [
+                            html.I(className="fa-solid fa-chalkboard-user", style={"marginRight": "8px", "color": THEME["accent_amber"]}),
+                            "Panel Docente",
+                        ],
+                        href="/docente",
+                        style={
+                            "background": "rgba(245, 158, 11, 0.12)",
+                            "border": "1px solid rgba(245, 158, 11, 0.35)",
+                            "color": THEME["text"],
+                            "padding": "8px 16px",
+                            "borderRadius": "20px",
+                            "textDecoration": "none",
+                            "fontWeight": "600",
+                            "fontSize": "13px",
+                            "display": "inline-flex",
+                            "alignItems": "center",
+                            "marginRight": "12px",
+                            "transition": "all 0.2s ease",
+                        },
+                    ),
                     html.Button(
                         [
                             html.I(id="theme-toggle-icon", className="fa-solid fa-moon", style={"marginRight": "8px"}),
@@ -38,6 +59,7 @@ def home_layout():
                 style={
                     "display": "flex",
                     "justifyContent": "flex-end",
+                    "alignItems": "center",
                     "padding": "16px 24px 0 0",
                     "width": "100%",
                     "boxSizing": "border-box",

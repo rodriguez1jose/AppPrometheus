@@ -14,7 +14,8 @@ from apps.home import home_layout
 from apps.imaging.hub import imaging_hub_layout, modalidad_wrapper
 
 # Módulos de aplicación
-from apps import app_sys, app_mri, app_ct, app_rx
+from apps import app_sys, app_mri, app_ct, app_rx, app_docente
+from apps.imaging import casos
 
 
 # =============================================================================
@@ -233,6 +234,18 @@ def render_page(pathname: str):
     if pathname.startswith("/imaging/rx"):
         return app_rx.layout(pathname)
 
+    # 6. Modalidad: Casos Clínicos Interactivos (/imaging/casos)
+    if pathname.startswith("/imaging/casos"):
+        return modalidad_wrapper(
+            casos.casos_layout(),
+            "Casos Clínicos Interactivos",
+            "#10b981",
+        )
+
+    # 7. Panel Docente (/docente)
+    if pathname == "/docente" or pathname.startswith("/docente/"):
+        return app_docente.layout()
+
     # Fallback predeterminado: Home
     return home_layout()
 
@@ -244,6 +257,8 @@ app_sys.register_callbacks(app)
 app_mri.register_callbacks(app)
 app_ct.register_callbacks(app)
 app_rx.register_callbacks(app)
+casos.register_callbacks(app)
+app_docente.register_callbacks(app)
 
 
 # =============================================================================

@@ -4,6 +4,7 @@ import os
 import csv
 import base64
 import io
+from functools import lru_cache
 import numpy as np
 
 from datetime import datetime
@@ -43,34 +44,30 @@ THEME = {
 
 
 # ============================================================
-# CARGA DE IMÁGENES
+# CARGA DE IMÁGENES (CON CACHÉ LRU)
 # ============================================================
 
-def decodificar_imagen(contents):
+@lru_cache(maxsize=4)
+def _decodificar_imagen_cached(contents):
     """
     Convierte una imagen cargada mediante dcc.Upload
-    en una matriz NumPy en escala de grises.
+    en una matriz NumPy en escala de grises (con memoización y límite de 20MB).
     """
-
-    if contents is None:
+    if contents is None or len(contents) > int(20 * 1024 * 1024 * 1.37):
         return None
 
     try:
         _, contenido = contents.split(",", 1)
-
         datos = base64.b64decode(contenido)
-
-        imagen = Image.open(
-            io.BytesIO(datos)
-        ).convert("L")
-
-        return np.array(
-            imagen,
-            dtype=np.uint8
-        )
-
+        imagen = Image.open(io.BytesIO(datos)).convert("L")
+        return np.array(imagen, dtype=np.uint8)
     except Exception:
         return None
+
+
+def decodificar_imagen(contents):
+    arr = _decodificar_imagen_cached(contents)
+    return arr.copy() if arr is not None else None
 
 # ============================================================
 # RUTAS DE IMÁGENES
@@ -1364,6 +1361,7 @@ def registrar_callbacks(app):
         Output("analisis-interpretacion", "children"),
         Input("analisis-upload-original", "contents"),
         Input("analisis-upload-procesada", "contents"),
+        prevent_initial_call=True,
     )
     def analizar_imagenes(contents_original, contents_procesada):
 
@@ -1387,6 +1385,7 @@ def registrar_callbacks(app):
             },
             height=390,
             margin={"l": 60, "r": 25, "t": 30, "b": 55},
+            uirevision=True,
         )
 
         if contents_original is None or contents_procesada is None:
@@ -1471,6 +1470,7 @@ def registrar_callbacks(app):
         )
 
         figura.update_layout(
+            uirevision=True,
             legend={
                 "orientation": "h",
                 "yanchor": "bottom",
@@ -1543,71 +1543,43 @@ def registrar_callbacks(app):
 
 
     # ========================================================
-    # GENERAR REPORTE
+    # GENERAR Y DESCARGAR REPORTE (CALLBACK UNIFICADO EFICIENTE)
     # ========================================================
 
     @app.callback(
         Output("analisis-reporte", "children"),
-        Input("btn-generar-reporte", "n_clicks"),
-        State("analisis-upload-original", "contents"),
-        State("analisis-upload-procesada", "contents"),
-        prevent_initial_call=True,
-    )
-    def mostrar_reporte(
-        n_clicks,
-        contents_original,
-        contents_procesada,
-    ):
-
-        if contents_original is None or contents_procesada is None:
-            return (
-                "Carga primero la imagen original y la imagen procesada."
-            )
-
-        imagen_original = decodificar_imagen(contents_original)
-        imagen_procesada = decodificar_imagen(contents_procesada)
-
-        if imagen_original is None or imagen_procesada is None:
-            return "No se pudo leer una de las imágenes."
-
-        return generar_reporte(
-            imagen_original,
-            imagen_procesada,
-        )
-
-
-    # ========================================================
-    # DESCARGAR REPORTE
-    # ========================================================
-
-    @app.callback(
         Output("analisis-download-reporte", "data"),
         Input("btn-generar-reporte", "n_clicks"),
         State("analisis-upload-original", "contents"),
         State("analisis-upload-procesada", "contents"),
         prevent_initial_call=True,
     )
-    def descargar_reporte(
+    def generar_y_descargar_reporte(
         n_clicks,
         contents_original,
         contents_procesada,
     ):
+        if not n_clicks:
+            return no_update, no_update
 
         if contents_original is None or contents_procesada is None:
-            return no_update
+            return (
+                "Carga primero la imagen original y la imagen procesada.",
+                no_update,
+            )
 
         imagen_original = decodificar_imagen(contents_original)
         imagen_procesada = decodificar_imagen(contents_procesada)
 
         if imagen_original is None or imagen_procesada is None:
-            return no_update
+            return "No se pudo leer una de las imágenes.", no_update
 
         reporte = generar_reporte(
             imagen_original,
             imagen_procesada,
         )
 
-        return dcc.send_string(
+        return reporte, dcc.send_string(
             reporte,
             "reporte_analisis_rx.txt",
         )

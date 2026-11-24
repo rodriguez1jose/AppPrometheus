@@ -298,11 +298,13 @@ def fourier_coefficients_sawtooth(T0, V=1.0, N=50):
 
 
 def reconstruct_signal_from_coeffs(t, coeffs, T0):
+    if not coeffs or len(t) == 0:
+        return np.zeros_like(t, dtype=float)
     w0 = 2 * np.pi / T0
-    x_approx = np.zeros_like(t, dtype=complex)
-    for k, Ck in coeffs.items():
-        x_approx += Ck * np.exp(1j * k * w0 * t)
-    return np.real(x_approx)
+    k_vals = np.array(list(coeffs.keys()), dtype=float)
+    Ck_vals = np.array(list(coeffs.values()), dtype=complex)
+    phases = np.outer(k_vals, w0 * t)
+    return np.real(Ck_vals @ np.exp(1j * phases))
 
 
 def compute_spectrum(coeffs):
@@ -323,7 +325,6 @@ def compute_energy(coeffs):
 
 def compute_fourier_coeffs_numeric(x_array, t_array, T0, N=50):
     w0 = 2 * np.pi / T0
-    coeffs = {}
     mask = (t_array >= 0) & (t_array < T0)
     t_period = t_array[mask]
     x_period = x_array[mask]
@@ -332,12 +333,11 @@ def compute_fourier_coeffs_numeric(x_array, t_array, T0, N=50):
         t_period = t_array
         x_period = x_array
 
-    for k in range(-N, N + 1):
-        integrand = x_period * np.exp(-1j * k * w0 * t_period)
-        Ck = _trapz(integrand, t_period) / T0
-        coeffs[k] = complex(Ck)
-
-    return coeffs
+    k_vals = np.arange(-N, N + 1, dtype=float)
+    phases = np.outer(k_vals, w0 * t_period)
+    integrand_matrix = x_period * np.exp(-1j * phases)
+    Ck_vals = _trapz(integrand_matrix, t_period, axis=1) / T0
+    return {int(k): complex(Ck_vals[i]) for i, k in enumerate(range(-N, N + 1))}
 
 
 def compute_coeffs_table(coeffs, max_rows=15, theme_mode='dark'):
@@ -971,7 +971,7 @@ def compute_convolution_animated(x, h, t, n_frames=60):
     return frames, [float(v) for v in t_samples]
 
 
-def build_conv_animation_figure(frame, t, x, tk, y_conv, t_conv):
+def build_conv_animation_figure(frame, t, x, tk, y_conv, t_conv, y_ranges=None):
     h_shifted = np.array(frame['h_shifted'])
     product = np.array(frame['product'])
     y_val = frame['y_val']
@@ -987,28 +987,36 @@ def build_conv_animation_figure(frame, t, x, tk, y_conv, t_conv):
         vertical_spacing=0.12, row_heights=[0.35, 0.35, 0.30]
     )
 
+    # Traza 0: Señal x(tau) fija
     fig.add_trace(go.Scatter(
         x=t, y=x, mode='lines', name='x(τ)',
         line=dict(color='#38bdf8', width=2.5)
     ), row=1, col=1)
+
+    # Traza 1: Señal h(t - tau) desplazada
     fig.add_trace(go.Scatter(
         x=t, y=h_shifted, mode='lines', name='h(t−τ)',
         line=dict(color='#a855f7', width=2.5)
     ), row=1, col=1)
 
+    # Traza 2: Producto instantáneo x(tau) * h(t - tau)
     fig.add_trace(go.Scatter(
         x=t, y=product, mode='lines', name='producto',
         line=dict(color='#f59e0b', width=2.5),
         fill='tozeroy', fillcolor='rgba(245,158,11,0.25)'
     ), row=2, col=1)
 
+    # Traza 3: Convolución acumulada y(t) hasta el instante tk
     mask = t_conv <= tk
-    if np.any(mask):
-        fig.add_trace(go.Scatter(
-            x=t_conv[mask], y=y_conv[mask], mode='lines',
-            name='y(t)', line=dict(color='#10b981', width=2.5),
-            fill='tozeroy', fillcolor='rgba(16,185,129,0.15)'
-        ), row=3, col=1)
+    sub_t = t_conv[mask] if np.any(mask) else []
+    sub_y = y_conv[mask] if np.any(mask) else []
+    fig.add_trace(go.Scatter(
+        x=sub_t, y=sub_y, mode='lines',
+        name='y(t)', line=dict(color='#10b981', width=2.5),
+        fill='tozeroy', fillcolor='rgba(16,185,129,0.15)'
+    ), row=3, col=1)
+
+    # Traza 4: Marcador del punto actual (tk, y(tk))
     fig.add_trace(go.Scatter(
         x=[tk], y=[y_val], mode='markers',
         marker=dict(color='#ef4444', size=12, symbol='circle',
@@ -1020,12 +1028,19 @@ def build_conv_animation_figure(frame, t, x, tk, y_conv, t_conv):
         height=580, showlegend=False,
         template='plotly_dark', plot_bgcolor=THEME['card'],
         paper_bgcolor=THEME['card'],
-        margin=dict(l=50, r=20, t=40, b=30)
+        margin=dict(l=50, r=20, t=40, b=30),
+        uirevision="conv_anim",
     )
-    fig.update_xaxes(title_text="τ (tiempo)", row=3, col=1)
-    fig.update_xaxes(range=[float(t[0]), float(t[-1])], row=1, col=1)
-    fig.update_xaxes(range=[float(t[0]), float(t[-1])], row=2, col=1)
-    fig.update_xaxes(range=[float(t_conv[0]), float(t_conv[-1])], row=3, col=1)
+    fig.update_xaxes(title_text="τ (tiempo)", row=3, col=1, fixedrange=True)
+    fig.update_xaxes(range=[float(t[0]), float(t[-1])], row=1, col=1, fixedrange=True)
+    fig.update_xaxes(range=[float(t[0]), float(t[-1])], row=2, col=1, fixedrange=True)
+    fig.update_xaxes(range=[float(t_conv[0]), float(t_conv[-1])], row=3, col=1, fixedrange=True)
+
+    if y_ranges:
+        fig.update_yaxes(range=y_ranges.get('row1'), row=1, col=1, fixedrange=True)
+        fig.update_yaxes(range=y_ranges.get('row2'), row=2, col=1, fixedrange=True)
+        fig.update_yaxes(range=y_ranges.get('row3'), row=3, col=1, fixedrange=True)
+
     return fig
 
 
@@ -1172,17 +1187,17 @@ def page_convolucion():
                 html.Span(id='sys-conv-frame-indicator',
                           style={'color': '#94a3b8', 'alignSelf': 'center', 'fontSize': '13px'}),
             ]),
-            dcc.Interval(id='sys-conv-anim-interval', interval=250, n_intervals=0, disabled=True),
+            dcc.Interval(id='sys-conv-anim-interval', interval=75, n_intervals=0, disabled=True),
+
+            dcc.Graph(id='sys-conv-graph-anim', config={'displayModeBar': False}),
 
             dcc.Loading(
                 type="circle",
                 color="#38bdf8",
                 children=[
-                    dcc.Graph(id='sys-conv-graph-anim', config={'displayModeBar': False}),
+                    dcc.Graph(id='sys-conv-graph-result', config={'displayModeBar': False}),
                 ]
             ),
-
-            dcc.Graph(id='sys-conv-graph-result', config={'displayModeBar': False}),
 
             dcc.Store(id='sys-conv-frames-store', data={}),
             dcc.Store(id='sys-conv-current-frame', data=0),
@@ -1333,7 +1348,10 @@ def page_transformada_fourier():
                 ]),
                 html.Div(style={'flex': '1', 'minWidth': '160px'}, children=[
                     html.Label("Rango t:", style=STYLE_LABEL),
-                    dcc.Slider(id='sys-tf-trange', min=2, max=20, step=1, value=10),
+                    dcc.Slider(
+                        id='sys-tf-trange', min=2, max=20, step=1, value=10,
+                        marks=make_slider_marks({2: '2', 5: '5', 10: '10', 15: '15', 20: '20'}),
+                    ),
                 ]),
                 html.Div(style={'flex': '1', 'minWidth': '160px'}, children=[
                     html.Label("Escala:", style=STYLE_LABEL),
@@ -2751,7 +2769,8 @@ def _simular_fourier_impl(n_clicks, mode, signal_type, custom_fn, N, T0, n_perio
         height=340, template=template, plot_bgcolor=plot_bg, paper_bgcolor=paper_bg,
         font=dict(color=font_color),
         margin=dict(l=45, r=20, t=50, b=35),
-        legend=dict(orientation='h', yanchor='top', y=-0.18, xanchor='center', x=0.5)
+        legend=dict(orientation='h', yanchor='top', y=-0.18, xanchor='center', x=0.5),
+        uirevision=True
     )
 
     # ===== GRÁFICO 2: Comparación =====
@@ -2768,7 +2787,8 @@ def _simular_fourier_impl(n_clicks, mode, signal_type, custom_fn, N, T0, n_perio
     fig_comp.update_layout(height=340, template=template,
                             plot_bgcolor=plot_bg, paper_bgcolor=paper_bg,
                             font=dict(color=font_color),
-                            showlegend=False, margin=dict(l=45, r=20, t=50, b=35))
+                            showlegend=False, margin=dict(l=45, r=20, t=50, b=35),
+                            uirevision=True)
 
     # ===== GRÁFICO 3: Error =====
     fig_error = go.Figure()
@@ -2780,7 +2800,8 @@ def _simular_fourier_impl(n_clicks, mode, signal_type, custom_fn, N, T0, n_perio
         xaxis_title="Tiempo (s)", yaxis_title="e(t)",
         height=320, template=template, plot_bgcolor=plot_bg, paper_bgcolor=paper_bg,
         font=dict(color=font_color),
-        margin=dict(l=45, r=20, t=50, b=35)
+        margin=dict(l=45, r=20, t=50, b=35),
+        uirevision=True
     )
 
     # ===== GRÁFICO 4: Convergencia =====
@@ -2807,14 +2828,16 @@ def _simular_fourier_impl(n_clicks, mode, signal_type, custom_fn, N, T0, n_perio
             height=320, template=template, plot_bgcolor=plot_bg, paper_bgcolor=paper_bg,
             font=dict(color=font_color),
             margin=dict(l=45, r=55, t=50, b=35),
-            legend=dict(orientation='h', yanchor='top', y=-0.18, xanchor='center', x=0.5)
+            legend=dict(orientation='h', yanchor='top', y=-0.18, xanchor='center', x=0.5),
+            uirevision=True
         )
     except Exception:
         fig_conv = go.Figure()
         fig_conv.update_layout(title="<b>Convergencia</b> — No disponible",
                                 height=320, template=template,
                                 plot_bgcolor=plot_bg, paper_bgcolor=paper_bg,
-                                font=dict(color=font_color))
+                                font=dict(color=font_color),
+                                uirevision=True)
 
     # ===== GRÁFICO 5: Espectro de magnitud =====
     if spec_scale == 'db':
@@ -2835,7 +2858,8 @@ def _simular_fourier_impl(n_clicks, mode, signal_type, custom_fn, N, T0, n_perio
         xaxis_title="Armónico k", yaxis_title=y_title,
         height=320, template=template, plot_bgcolor=plot_bg, paper_bgcolor=paper_bg,
         font=dict(color=font_color),
-        margin=dict(l=45, r=20, t=50, b=35)
+        margin=dict(l=45, r=20, t=50, b=35),
+        uirevision=True
     )
 
     # ===== GRÁFICO 6: Espectro de fase =====
@@ -2850,7 +2874,8 @@ def _simular_fourier_impl(n_clicks, mode, signal_type, custom_fn, N, T0, n_perio
         xaxis_title="Armónico k", yaxis_title="Fase (°)",
         height=320, template=template, plot_bgcolor=plot_bg, paper_bgcolor=paper_bg,
         font=dict(color=font_color),
-        margin=dict(l=45, r=20, t=50, b=35)
+        margin=dict(l=45, r=20, t=50, b=35),
+        uirevision=True
     )
 
     # ===== MÉTRICAS =====
@@ -3125,6 +3150,8 @@ def _register_activities_callbacks(app):
             return html.Span([html.I(className="fa-solid fa-triangle-exclamation", style={"marginRight": "8px"}), "Ingresa tu nombre completo."]), no_update
         if not contents:
             return html.Span([html.I(className="fa-solid fa-triangle-exclamation", style={"marginRight": "8px"}), "Selecciona un archivo."]), no_update
+        if len(contents) > int(25 * 1024 * 1024 * 1.37):  # ~25 MB en base64
+            return html.Span([html.I(className="fa-solid fa-triangle-exclamation", style={"marginRight": "8px"}), "El archivo supera el tamaño máximo permitido de 25 MB."]), no_update
         if not descripcion or not descripcion.strip():
             return html.Span([html.I(className="fa-solid fa-triangle-exclamation", style={"marginRight": "8px"}), "Escribe una descripción."]), no_update
 
@@ -3487,14 +3514,14 @@ def _register_convolucion_callbacks(app):
         return x_e, h_e
 
     @app.callback(
-        [Output('sys-conv-graph-anim', 'figure'),
+        [Output('sys-conv-graph-anim', 'figure', allow_duplicate=True),
          Output('sys-conv-graph-result', 'figure'),
          Output('sys-conv-frames-store', 'data'),
-         Output('sys-conv-current-frame', 'data'),
+         Output('sys-conv-current-frame', 'data', allow_duplicate=True),
          Output('sys-conv-error', 'children'),
          Output('sys-conv-playing', 'data', allow_duplicate=True),
          Output('sys-conv-anim-interval', 'disabled', allow_duplicate=True),
-         Output('sys-conv-frame-indicator', 'children')],
+         Output('sys-conv-frame-indicator', 'children', allow_duplicate=True)],
         [Input('sys-btn-conv-run', 'n_clicks')],
         [State('sys-conv-x-expr', 'value'),
          State('sys-conv-h-expr', 'value'),
@@ -3507,7 +3534,7 @@ def _register_convolucion_callbacks(app):
             tmax = float(tmax) if tmax else 6.0
             n_frames = int(n_frames) if n_frames else 60
 
-            t = np.linspace(-tmax / 2, tmax / 2, 800)
+            t = np.linspace(-tmax / 2, tmax / 2, 500)
 
             x, err_x = parse_user_signal(x_expr, t)
             if err_x:
@@ -3523,6 +3550,27 @@ def _register_convolucion_callbacks(app):
 
             t_conv, y_conv = compute_convolution_numeric(x, h, t)
             frames, t_samples = compute_convolution_animated(x, h, t, n_frames=n_frames)
+
+            # Precalcular rangos para fijar los ejes y estabilizar la visualización (evita saltos y parpadeo)
+            y1_min = min(float(np.min(x)), float(np.min(h)), 0.0)
+            y1_max = max(float(np.max(x)), float(np.max(h)), 0.1)
+            span1 = max(y1_max - y1_min, 0.1)
+
+            max_prod_frames = max((max(f['product']) for f in frames), default=0.1)
+            min_prod_frames = min((min(f['product']) for f in frames), default=0.0)
+            y2_min = min(float(min_prod_frames), 0.0)
+            y2_max = max(float(max_prod_frames), 0.1)
+            span2 = max(y2_max - y2_min, 0.1)
+
+            y3_min = min(float(np.min(y_conv)), 0.0)
+            y3_max = max(float(np.max(y_conv)), 0.1)
+            span3 = max(y3_max - y3_min, 0.1)
+
+            y_ranges = {
+                'row1': [y1_min - 0.1 * span1, y1_max + 0.15 * span1],
+                'row2': [y2_min - 0.1 * span2, y2_max + 0.15 * span2],
+                'row3': [y3_min - 0.1 * span3, y3_max + 0.15 * span3]
+            }
 
             fig_result = make_subplots(
                 rows=2, cols=2,
@@ -3554,7 +3602,8 @@ def _register_convolucion_callbacks(app):
                 height=520, showlegend=False,
                 template='plotly_dark', plot_bgcolor=THEME['card'],
                 paper_bgcolor=THEME['card'],
-                margin=dict(l=45, r=20, t=50, b=35))
+                margin=dict(l=45, r=20, t=50, b=35),
+                uirevision="conv_result")
 
             store_data = {
                 'x': [float(v) for v in x],
@@ -3566,11 +3615,12 @@ def _register_convolucion_callbacks(app):
                 't_samples': t_samples,
                 'x_expr': str(x_expr),
                 'h_expr': str(h_expr),
-                'n_frames': len(frames)
+                'n_frames': len(frames),
+                'y_ranges': y_ranges
             }
 
             fig_anim = build_conv_animation_figure(
-                frames[0], t, x, t_samples[0], y_conv, t_conv)
+                frames[0], t, x, t_samples[0], y_conv, t_conv, y_ranges=y_ranges)
 
             indicator = f"Frame 1 / {len(frames)}"
 
@@ -3583,9 +3633,72 @@ def _register_convolucion_callbacks(app):
                     html.Div([html.I(className="fa-solid fa-triangle-exclamation", style={"marginRight": "8px"}), str(e)], style=STYLE_ERROR_BOX),
                     False, True, "")
 
-    @app.callback(
-        [Output('sys-conv-anim-interval', 'disabled'),
-         Output('sys-conv-playing', 'data'),
+    # Control de animación interactivo 100% clientside (Cero peticiones al servidor, cero parpadeo)
+    app.clientside_callback(
+        """
+        function(playClicks, pauseClicks, resetClicks, store, currentFrame, currentFig) {
+            var ctx = window.dash_clientside.callback_context;
+            if (!ctx || !ctx.triggered || ctx.triggered.length === 0) {
+                return [window.dash_clientside.no_update, window.dash_clientside.no_update, window.dash_clientside.no_update, window.dash_clientside.no_update, window.dash_clientside.no_update];
+            }
+            var propId = ctx.triggered[0].prop_id.split('.')[0];
+
+            if (propId === 'sys-btn-conv-play') {
+                if (!store || !store.frames || store.frames.length === 0) {
+                    return [window.dash_clientside.no_update, window.dash_clientside.no_update, window.dash_clientside.no_update, window.dash_clientside.no_update, window.dash_clientside.no_update];
+                }
+                return [false, true, window.dash_clientside.no_update, window.dash_clientside.no_update, window.dash_clientside.no_update];
+            }
+
+            if (propId === 'sys-btn-conv-pause') {
+                return [true, false, window.dash_clientside.no_update, window.dash_clientside.no_update, window.dash_clientside.no_update];
+            }
+
+            if (propId === 'sys-btn-conv-reset') {
+                if (!store || !store.frames || store.frames.length === 0 || !currentFig || !currentFig.data || currentFig.data.length < 5) {
+                    return [true, false, 0, window.dash_clientside.no_update, "Frame 1 / 0"];
+                }
+                var frames = store.frames;
+                var frame0 = frames[0];
+                var tk0 = frame0.tk;
+
+                var sub_t = [];
+                var sub_y = [];
+                for (var i = 0; i < store.t_conv.length; i++) {
+                    if (store.t_conv[i] <= tk0) {
+                        sub_t.push(store.t_conv[i]);
+                        sub_y.push(store.y_conv[i]);
+                    } else {
+                        break;
+                    }
+                }
+
+                var newFig = {
+                    data: [
+                        currentFig.data[0],
+                        Object.assign({}, currentFig.data[1], { y: frame0.h_shifted }),
+                        Object.assign({}, currentFig.data[2], { y: frame0.product }),
+                        Object.assign({}, currentFig.data[3], { x: sub_t, y: sub_y }),
+                        Object.assign({}, currentFig.data[4], { x: [tk0], y: [frame0.y_val], name: 'y=' + frame0.y_val.toFixed(4) })
+                    ],
+                    layout: Object.assign({}, currentFig.layout)
+                };
+
+                if (newFig.layout.annotations && newFig.layout.annotations.length > 0) {
+                    newFig.layout.annotations = [
+                        Object.assign({}, newFig.layout.annotations[0], { text: "x(τ)  y  h(t−τ)  [t = " + tk0.toFixed(2) + "]" }),
+                        ...newFig.layout.annotations.slice(1)
+                    ];
+                }
+
+                return [true, false, 0, newFig, "Frame 1 / " + frames.length];
+            }
+
+            return [window.dash_clientside.no_update, window.dash_clientside.no_update, window.dash_clientside.no_update, window.dash_clientside.no_update, window.dash_clientside.no_update];
+        }
+        """,
+        [Output('sys-conv-anim-interval', 'disabled', allow_duplicate=True),
+         Output('sys-conv-playing', 'data', allow_duplicate=True),
          Output('sys-conv-current-frame', 'data', allow_duplicate=True),
          Output('sys-conv-graph-anim', 'figure', allow_duplicate=True),
          Output('sys-conv-frame-indicator', 'children', allow_duplicate=True)],
@@ -3593,83 +3706,77 @@ def _register_convolucion_callbacks(app):
          Input('sys-btn-conv-pause', 'n_clicks'),
          Input('sys-btn-conv-reset', 'n_clicks')],
         [State('sys-conv-frames-store', 'data'),
-         State('sys-conv-current-frame', 'data')],
+         State('sys-conv-current-frame', 'data'),
+         State('sys-conv-graph-anim', 'figure')],
         prevent_initial_call=True
     )
-    def control_conv_animation(play_clicks, pause_clicks, reset_clicks,
-                                store, current_frame):
-        ctx = callback_context
-        if not ctx.triggered:
-            raise PreventUpdate
 
-        trig = ctx.triggered[0]['prop_id'].split('.')[0]
+    # Avance de frame 100% clientside ultra fluido (Renderizado instantáneo en navegador, CPU del servidor intacto)
+    app.clientside_callback(
+        """
+        function(n_intervals, store, currentFrame, isPlaying, fig) {
+            if (!isPlaying || !store || !store.frames || store.frames.length === 0 || !fig || !fig.data || fig.data.length < 5) {
+                return [window.dash_clientside.no_update, window.dash_clientside.no_update, window.dash_clientside.no_update];
+            }
 
-        if trig == 'sys-btn-conv-reset':
-            if not store or 'frames' not in store:
-                return True, False, 0, no_update, "Frame 1 / 0"
-            frames = store['frames']
-            t = np.array(store['t'])
-            x = np.array(store['x'])
-            t_conv = np.array(store['t_conv'])
-            y_conv = np.array(store['y_conv'])
-            t_samples = store['t_samples']
-            fig = build_conv_animation_figure(
-                frames[0], t, x, t_samples[0], y_conv, t_conv)
-            return True, False, 0, fig, f"Frame 1 / {len(frames)}"
+            var frames = store.frames;
+            var totalFrames = frames.length;
+            var cf = (currentFrame === null || currentFrame === undefined) ? 0 : currentFrame;
+            var nextFrame = (cf + 1) % totalFrames;
+            var frame = frames[nextFrame];
 
-        if trig == 'sys-btn-conv-play':
-            if not store or 'frames' not in store:
-                raise PreventUpdate
-            frames = store['frames']
-            cf = int(current_frame or 0)
-            if cf >= len(frames):
-                cf = 0
-            next_frame = (cf + 1) % len(frames)
-            t = np.array(store['t'])
-            x = np.array(store['x'])
-            t_conv = np.array(store['t_conv'])
-            y_conv = np.array(store['y_conv'])
-            t_samples = store['t_samples']
-            fig = build_conv_animation_figure(
-                frames[next_frame], t, x, t_samples[next_frame], y_conv, t_conv)
-            return False, True, next_frame, fig, f"Frame {next_frame + 1} / {len(frames)}"
+            var tk = frame.tk;
+            var h_shifted = frame.h_shifted;
+            var product = frame.product;
+            var y_val = frame.y_val;
 
-        if trig == 'sys-btn-conv-pause':
-            return True, False, no_update, no_update, no_update
+            var t_conv = store.t_conv;
+            var y_conv = store.y_conv;
 
-        raise PreventUpdate
+            var sub_t = [];
+            var sub_y = [];
+            for (var i = 0; i < t_conv.length; i++) {
+                if (t_conv[i] <= tk) {
+                    sub_t.push(t_conv[i]);
+                    sub_y.push(y_conv[i]);
+                } else {
+                    break;
+                }
+            }
 
-    @app.callback(
+            var newFig = {
+                data: [
+                    fig.data[0],
+                    Object.assign({}, fig.data[1], { y: h_shifted }),
+                    Object.assign({}, fig.data[2], { y: product }),
+                    Object.assign({}, fig.data[3], { x: sub_t, y: sub_y }),
+                    Object.assign({}, fig.data[4], { x: [tk], y: [y_val], name: 'y=' + y_val.toFixed(4) })
+                ],
+                layout: Object.assign({}, fig.layout)
+            };
+
+            if (newFig.layout.annotations && newFig.layout.annotations.length > 0) {
+                newFig.layout.annotations = [
+                    Object.assign({}, newFig.layout.annotations[0], { text: "x(τ)  y  h(t−τ)  [t = " + tk.toFixed(2) + "]" }),
+                    ...newFig.layout.annotations.slice(1)
+                ];
+            }
+
+            var indicatorText = "Frame " + (nextFrame + 1) + " / " + totalFrames;
+
+            return [nextFrame, newFig, indicatorText];
+        }
+        """,
         [Output('sys-conv-current-frame', 'data', allow_duplicate=True),
          Output('sys-conv-graph-anim', 'figure', allow_duplicate=True),
          Output('sys-conv-frame-indicator', 'children', allow_duplicate=True)],
         Input('sys-conv-anim-interval', 'n_intervals'),
         [State('sys-conv-frames-store', 'data'),
          State('sys-conv-current-frame', 'data'),
-         State('sys-conv-playing', 'data')],
+         State('sys-conv-playing', 'data'),
+         State('sys-conv-graph-anim', 'figure')],
         prevent_initial_call=True
     )
-    def advance_conv_frame(n_intervals, store, current_frame, playing):
-        if not playing or not store or 'frames' not in store:
-            raise PreventUpdate
-
-        frames = store['frames']
-        if not frames:
-            raise PreventUpdate
-
-        cf = int(current_frame or 0)
-        next_frame = (cf + 1) % len(frames)
-
-        t = np.array(store['t'])
-        x = np.array(store['x'])
-        t_conv = np.array(store['t_conv'])
-        y_conv = np.array(store['y_conv'])
-        t_samples = store['t_samples']
-
-        fig = build_conv_animation_figure(
-            frames[next_frame], t, x, t_samples[next_frame], y_conv, t_conv)
-
-        return next_frame, fig, f"Frame {next_frame + 1} / {len(frames)}"
 
 
 def _register_tf_callbacks(app):

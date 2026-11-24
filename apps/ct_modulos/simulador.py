@@ -6,6 +6,7 @@
 
 import base64
 import io
+from functools import lru_cache
 
 import numpy as np
 from PIL import Image
@@ -30,9 +31,10 @@ THEME = {
 }
 
 # ============================================================
-# 1. GENERAR FANTOMA
+# 1. GENERAR FANTOMA (CON CACHÉ DETERMINISTA)
 # ============================================================
-def generar_fantoma(size=160):
+@lru_cache(maxsize=8)
+def _generar_fantoma_cached(size=160):
     fantoma = shepp_logan_phantom()
     fantoma = resize(fantoma, (size, size), anti_aliasing=True)
     fantoma = fantoma.astype(np.float32)
@@ -40,6 +42,10 @@ def generar_fantoma(size=160):
     if maximo > minimo:
         fantoma = (fantoma - minimo) / (maximo - minimo)
     return fantoma
+
+
+def generar_fantoma(size=160):
+    return _generar_fantoma_cached(size).copy()
 
 # ============================================================
 # 2. GENERAR ÁNGULOS
@@ -133,7 +139,7 @@ def filtro_rampa(proyeccion):
     return np.real(np.fft.ifft(espectro_filtrado))
 
 # ============================================================
-# 8. FILTRAR SINOGRAMA
+# 8. FILTRAR SINOGRAMA (VECTORIZADO)
 # ============================================================
 def filtrar_sinograma(sinograma, tipo_filtro="ramp"):
     sinograma = np.asarray(sinograma, dtype=np.float32)
@@ -141,45 +147,45 @@ def filtrar_sinograma(sinograma, tipo_filtro="ramp"):
         raise ValueError("Filtro no válido. Usar: ramp, hamming o cosine.")
     n = sinograma.shape[0]
     frecuencias = np.fft.fftfreq(n)
-    filtro = np.abs(frecuencias).copy()
+    filtro = np.abs(frecuencias).astype(np.float32)
     if tipo_filtro == "hamming":
-        filtro = filtro * np.hamming(n)
+        filtro = filtro * np.hamming(n).astype(np.float32)
     elif tipo_filtro == "cosine":
-        filtro = filtro * np.abs(np.cos(np.pi * frecuencias))
-    resultado = np.zeros_like(sinograma, dtype=np.float32)
-    for i in range(sinograma.shape[1]):
-        espectro = np.fft.fft(sinograma[:, i])
-        resultado[:, i] = np.real(np.fft.ifft(espectro * filtro))
-    return resultado
+        filtro = filtro * np.abs(np.cos(np.pi * frecuencias)).astype(np.float32)
+
+    # FFT 1D vectorizada sobre todas las columnas a la vez (axis=0)
+    espectro = np.fft.fft(sinograma, axis=0)
+    espectro_filtrado = espectro * filtro[:, None]
+    return np.real(np.fft.ifft(espectro_filtrado, axis=0)).astype(np.float32)
 
 # ============================================================
-# 9. RETROPROYECCIÓN SIMPLE
+# 9. RETROPROYECCIÓN SIMPLE (OPTIMIZADA SIN ALOCACIONES EN BUCLE)
 # ============================================================
 def reconstruccion_retroproyeccion(sinograma, angulos):
     sinograma = np.asarray(sinograma, dtype=np.float32)
     numero_detecciones = sinograma.shape[0]
     numero_angulos = sinograma.shape[1]
     imagen = np.zeros((numero_detecciones, numero_detecciones), dtype=np.float32)
-    centro = (numero_detecciones - 1) / 2
-    y, x = np.indices(imagen.shape)
+    centro = (numero_detecciones - 1) / 2.0
+    y, x = np.indices(imagen.shape, dtype=np.float32)
     x = x - centro
     y = y - centro
-    detector_centro = (numero_detecciones - 1) / 2
+    detector_centro = centro
     for i, angulo in enumerate(angulos):
         theta = np.deg2rad(angulo)
         posicion = x * np.cos(theta) + y * np.sin(theta) + detector_centro
-        izquierda = np.floor(posicion).astype(int)
+        izquierda = np.floor(posicion).astype(np.int32)
         derecha = izquierda + 1
         peso = posicion - izquierda
         mascara = (izquierda >= 0) & (derecha < numero_detecciones)
-        aporte = np.zeros_like(imagen)
-        aporte[mascara] = (
-            (1 - peso[mascara]) * sinograma[izquierda[mascara], i]
-            + peso[mascara] * sinograma[derecha[mascara], i]
-        )
-        imagen += aporte
+        if np.any(mascara):
+            sin_col = sinograma[:, i]
+            izq_m = izquierda[mascara]
+            der_m = derecha[mascara]
+            peso_m = peso[mascara]
+            imagen[mascara] += (1.0 - peso_m) * sin_col[izq_m] + peso_m * sin_col[der_m]
     if numero_angulos > 0:
-        imagen *= (np.pi / (2 * numero_angulos))
+        imagen *= (np.pi / (2.0 * numero_angulos))
     return normalizar_imagen(imagen)
 
 # ============================================================

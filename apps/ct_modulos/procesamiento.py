@@ -5,10 +5,11 @@
 import base64
 import io
 import os
+from functools import lru_cache
 
 import cv2
 import numpy as np
-from dash import Input, Output, State, dcc, html
+from dash import Input, Output, State, dcc, html, ctx, no_update
 from dash.exceptions import PreventUpdate
 from PIL import Image
 import plotly.graph_objects as go
@@ -29,11 +30,12 @@ THEME = {
 }
 
 # ============================================================
-# FUNCIONES DE PROCESAMIENTO (sin cambios)
+# FUNCIONES DE PROCESAMIENTO (CON CACHÉ LRU)
 # ============================================================
-def procesar_base64_a_cv2(contenido_base64):
+@lru_cache(maxsize=4)
+def _procesar_base64_a_cv2_cached(contenido_base64):
     try:
-        if not contenido_base64 or "," not in contenido_base64:
+        if not contenido_base64 or "," not in contenido_base64 or len(contenido_base64) > int(20 * 1024 * 1024 * 1.37):
             return None
         _, datos_codificados = contenido_base64.split(",", 1)
         datos_binarios = base64.b64decode(datos_codificados)
@@ -42,6 +44,11 @@ def procesar_base64_a_cv2(contenido_base64):
         return imagen_cv
     except Exception:
         return None
+
+
+def procesar_base64_a_cv2(contenido_base64):
+    img = _procesar_base64_a_cv2_cached(contenido_base64)
+    return img.copy() if img is not None else None
 
 
 def transformar_a_base64(imagen_bgr):
@@ -125,6 +132,7 @@ def crear_figura_histograma(imagen, titulo, theme_mode="dark"):
         paper_bgcolor=bg,
         plot_bgcolor=bg,
         font=dict(color=text_color),
+        uirevision=True,
     )
     return figura
 
@@ -383,8 +391,19 @@ def procesamiento_layout():
                                 },
                             ),
                             html.Label(
-                                "1. Estiramiento de Contraste (Realce de Densidad):",
+                                "1. Estiramiento de Contraste y Ventaneo Hounsfield:",
                                 style={"fontWeight": "600", "color": THEME["text"]},
+                            ),
+                            html.Div(
+                                [
+                                    html.Span("Presets clínicos:", style={"fontSize": "11px", "color": THEME["muted"], "marginRight": "8px"}),
+                                    html.Button([html.I(className="fa-solid fa-brain", style={"marginRight": "5px"}), "Cerebro"], id="ct-btn-win-cerebro", n_clicks=0, style={"padding": "4px 8px", "fontSize": "11px", "borderRadius": "6px", "border": f"1px solid {THEME['border']}", "background": "rgba(255,255,255,0.06)", "color": THEME["text"], "cursor": "pointer"}),
+                                    html.Button([html.I(className="fa-solid fa-heart-pulse", style={"marginRight": "5px"}), "Mediastino"], id="ct-btn-win-mediastino", n_clicks=0, style={"padding": "4px 8px", "fontSize": "11px", "borderRadius": "6px", "border": f"1px solid {THEME['border']}", "background": "rgba(255,255,255,0.06)", "color": THEME["text"], "cursor": "pointer"}),
+                                    html.Button([html.I(className="fa-solid fa-bone", style={"marginRight": "5px"}), "Hueso"], id="ct-btn-win-oseo", n_clicks=0, style={"padding": "4px 8px", "fontSize": "11px", "borderRadius": "6px", "border": f"1px solid {THEME['border']}", "background": "rgba(255,255,255,0.06)", "color": THEME["text"], "cursor": "pointer"}),
+                                    html.Button([html.I(className="fa-solid fa-lungs", style={"marginRight": "5px"}), "Pulmón"], id="ct-btn-win-pulmon", n_clicks=0, style={"padding": "4px 8px", "fontSize": "11px", "borderRadius": "6px", "border": f"1px solid {THEME['border']}", "background": "rgba(255,255,255,0.06)", "color": THEME["text"], "cursor": "pointer"}),
+                                    html.Button([html.I(className="fa-solid fa-rotate-left", style={"marginRight": "5px"}), "Reset"], id="ct-btn-win-reset", n_clicks=0, style={"padding": "4px 8px", "fontSize": "11px", "borderRadius": "6px", "border": f"1px solid {THEME['border']}", "background": "rgba(255,255,255,0.06)", "color": THEME["muted"], "cursor": "pointer"}),
+                                ],
+                                style={"display": "flex", "gap": "6px", "flexWrap": "wrap", "alignItems": "center", "margin": "6px 0 10px 0"},
                             ),
                             dcc.RangeSlider(
                                 id="ct-rango-contraste",
@@ -618,6 +637,7 @@ def registrar_callbacks_procesamiento(app):
         [
             State("theme-store", "data"),
         ],
+        prevent_initial_call=True,
     )
     def actualizar_interfaz_ct(
         contenido_imagen, valores_contraste, valor_gamma,
@@ -655,7 +675,9 @@ def registrar_callbacks_procesamiento(app):
 
         r1, r2 = valores_contraste
         img_procesada = estiramiento_contraste(imagen_cv, r1, r2)
-        texto_contraste = f"Mapeo de histograma: [{r1} -> {r2}]."
+        ancho_w = int(r2 - r1)
+        nivel_l = int((r1 + r2) // 2)
+        texto_contraste = f"Ventaneo Hounsfield: [{r1} → {r2}] | Ancho (W) = {ancho_w}, Nivel (L) = {nivel_l}."
 
         img_procesada = aplicar_correccion_gamma(img_procesada, valor_gamma)
         texto_gamma = f"Luminancia matemática: γ = {valor_gamma:.1f}."
@@ -734,3 +756,26 @@ def registrar_callbacks_procesamiento(app):
             return dcc.send_bytes(datos_binarios, filename="segmentacion_roi.jpg")
         except Exception:
             raise PreventUpdate
+
+    @app.callback(
+        Output("ct-rango-contraste", "value"),
+        Input("ct-btn-win-cerebro", "n_clicks"),
+        Input("ct-btn-win-mediastino", "n_clicks"),
+        Input("ct-btn-win-oseo", "n_clicks"),
+        Input("ct-btn-win-pulmon", "n_clicks"),
+        Input("ct-btn-win-reset", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def aplicar_preset_ventaneo(n_cer, n_med, n_ose, n_pul, n_res):
+        trig = ctx.triggered_id
+        if trig == "ct-btn-win-cerebro":
+            return [40, 120]      # Ventana Cerebral
+        elif trig == "ct-btn-win-mediastino":
+            return [25, 175]     # Ventana Mediastino/Tejidos
+        elif trig == "ct-btn-win-oseo":
+            return [140, 255]    # Ventana Ósea
+        elif trig == "ct-btn-win-pulmon":
+            return [10, 85]      # Ventana Pulmonar
+        elif trig == "ct-btn-win-reset":
+            return [0, 255]
+        return no_update

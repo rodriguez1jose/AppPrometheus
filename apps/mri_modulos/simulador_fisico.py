@@ -42,28 +42,30 @@ def _rot_z(a):
 
 def bloch_vector(T1=800., T2=80., flip=90., df=5.0, duracion=None, n=600, pasos_excitacion=40):
     """
-    Simula un único vector M en el marco rotatorio.
+    Simula un único vector M en el marco rotatorio (optimizado con preasignación).
     df: desplazamiento de frecuencia respecto a la resonancia [Hz].
     Devuelve t [ms], M (n,3).
     """
     if duracion is None:
         duracion = max(3 * T1, 5 * T2)
-    M = np.array([0.0, 0.0, 1.0])
-    tray = []
+    M = np.array([0.0, 0.0, 1.0], dtype=np.float64)
+    tray = np.empty((pasos_excitacion, 3), dtype=np.float64)
     paso = np.deg2rad(flip) / pasos_excitacion
-    for _ in range(pasos_excitacion):
-        M = _rot_x(paso) @ M
-        tray.append(M.copy())
+    Rx = _rot_x(paso)
+    for i in range(pasos_excitacion):
+        M = Rx @ M
+        tray[i] = M
     t_exc = np.linspace(-1.0, 0.0, pasos_excitacion)
     t = np.linspace(0, duracion, n)
     dt = t[1] - t[0]
-    out = []
-    for _ in t:
-        out.append(M.copy())
-        M = _rot_z(2 * np.pi * df * dt * 1e-3) @ M
-        E1, E2 = np.exp(-dt / T1), np.exp(-dt / T2)
-        M = np.array([M[0] * E2, M[1] * E2, 1 + (M[2] - 1) * E1])
-    return np.concatenate([t_exc, t]), np.vstack([np.array(tray), np.array(out)])
+    out = np.empty((n, 3), dtype=np.float64)
+    Rz = _rot_z(2 * np.pi * df * dt * 1e-3)
+    E1, E2 = np.exp(-dt / T1), np.exp(-dt / T2)
+    for i in range(n):
+        out[i] = M
+        M = Rz @ M
+        M = np.array([M[0] * E2, M[1] * E2, 1.0 + (M[2] - 1.0) * E1])
+    return np.concatenate([t_exc, t]), np.vstack([tray, out])
 
 
 def bloch_isocromatas(T1=800., T2=80., T2p=25., TE=60., secuencia="SE", n_spins=200,

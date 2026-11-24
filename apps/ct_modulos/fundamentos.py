@@ -5652,26 +5652,31 @@ def block11():
         ),
     ]
 
+_CACHED_LAYOUT_FUNDAMENTOS = None
+
 def layout_fundamentos():
-    bloques=block1()+block2()+block3()+block4()+block5()+block6()+block7()+block8()+block9()+block10()+block11()
-    return html.Div([
-        html.Div([html.Div('FUNDAMENTOS DE TC',style={'display':'inline-block','background':'rgba(139,92,246,.15)','border':'1px solid rgba(139,92,246,.45)','color':'#C4B5FD','padding':'6px 12px','borderRadius':'20px','fontSize':'12px','fontWeight':'700','letterSpacing':'1px'}),html.H1('Fundamentos de Tomografía Computarizada',style={'color':BLANCO,'fontSize':'38px','fontWeight':'800','marginBottom':'12px'}),html.P('Comprende cómo una medición de rayos X se transforma en proyecciones, sinograma y finalmente en una imagen reconstruida.',style={'color':'#CBD5E1','fontSize':'17px','lineHeight':'1.7','maxWidth':'850px'})],style={'background':'linear-gradient(135deg,#111827,#17152B,#111827)','border':f'1px solid rgba(139,92,246,.35)','borderRadius':'20px','padding':'35px','marginBottom':'30px'}),
-        html.Div([
-            html.H3([html.I(className='fa-solid fa-book', style={'marginRight': '8px'}), 'Contenido'], className="ct-index-title", style={'fontSize': '20px', 'fontWeight': '700', 'margin': '0 0 14px 0'}),
+    global _CACHED_LAYOUT_FUNDAMENTOS
+    if _CACHED_LAYOUT_FUNDAMENTOS is None:
+        bloques = block1() + block2() + block3() + block4() + block5() + block6() + block7() + block8() + block9() + block10() + block11()
+        _CACHED_LAYOUT_FUNDAMENTOS = html.Div([
+            html.Div([html.Div('FUNDAMENTOS DE TC',style={'display':'inline-block','background':'rgba(139,92,246,.15)','border':'1px solid rgba(139,92,246,.45)','color':'#C4B5FD','padding':'6px 12px','borderRadius':'20px','fontSize':'12px','fontWeight':'700','letterSpacing':'1px'}),html.H1('Fundamentos de Tomografía Computarizada',style={'color':BLANCO,'fontSize':'38px','fontWeight':'800','marginBottom':'12px'}),html.P('Comprende cómo una medición de rayos X se transforma en proyecciones, sinograma y finalmente en una imagen reconstruida.',style={'color':'#CBD5E1','fontSize':'17px','lineHeight':'1.7','maxWidth':'850px'})],style={'background':'linear-gradient(135deg,#111827,#17152B,#111827)','border':f'1px solid rgba(139,92,246,.35)','borderRadius':'20px','padding':'35px','marginBottom':'30px'}),
             html.Div([
-                dcc.Link(
-                    f'{n}. {t}',
-                    href=f'#fund-{n}',
-                    className="ct-index-link",
-                    style={'textDecoration':'none','padding':'8px 14px','borderRadius':'8px','fontSize':'13px','fontWeight':'600'}
-                ) for n,t in [(1,'Introducción'),(2,'Proyecciones'),(3,'Radon'),(4,'Sinograma'),(5,'Retroproyección'),(6,'FBP'),(7,'Filtros'),(8,'Haz de abanico'),(9,'Resumen'),(10,'Fórmulas y modelo matemático'),(11,'Procesamiento en CT-SIM')]
-            ], style={'display':'flex','flexWrap':'wrap','gap':'8px'})
-        ], className="ct-index-card", style={'borderRadius':'14px','padding':'18px 20px','marginBottom':'30px'}),
-        *[html.Div(block, id=f'fund-{i}') for i,block in enumerate(bloques,1)]
-    ],style={'background':NEGRO,'minHeight':'100vh','padding':'30px 5%','color':BLANCO,'fontFamily':'Arial,sans-serif'})
+                html.H3([html.I(className='fa-solid fa-book', style={'marginRight': '8px'}), 'Contenido'], className="ct-index-title", style={'fontSize': '20px', 'fontWeight': '700', 'margin': '0 0 14px 0'}),
+                html.Div([
+                    dcc.Link(
+                        f'{n}. {t}',
+                        href=f'#fund-{n}',
+                        className="ct-index-link",
+                        style={'textDecoration':'none','padding':'8px 14px','borderRadius':'8px','fontSize':'13px','fontWeight':'600'}
+                    ) for n,t in [(1,'Introducción'),(2,'Proyecciones'),(3,'Radon'),(4,'Sinograma'),(5,'Retroproyección'),(6,'FBP'),(7,'Filtros'),(8,'Haz de abanico'),(9,'Resumen'),(10,'Fórmulas y modelo matemático'),(11,'Procesamiento en CT-SIM')]
+                ], style={'display':'flex','flexWrap':'wrap','gap':'8px'})
+            ], className="ct-index-card", style={'borderRadius':'14px','padding':'18px 20px','marginBottom':'30px'}),
+            *[html.Div(block, id=f'fund-{i}') for i,block in enumerate(bloques,1)]
+        ], style={'background':NEGRO,'minHeight':'100vh','padding':'30px 5%','color':BLANCO,'fontFamily':'Arial,sans-serif'})
+    return _CACHED_LAYOUT_FUNDAMENTOS
 
 if __name__=='__main__':
     from dash import Dash
     app=Dash(__name__,external_stylesheets=[dbc.themes.BOOTSTRAP])
     app.layout=layout_fundamentos()
-    app.run(debug=True)
+    app.run(debug=False)

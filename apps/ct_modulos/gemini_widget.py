@@ -5,6 +5,7 @@ from dash.dependencies import Input, Output, State
 from dash.exceptions import PreventUpdate
 
 from gemini.asistente import preguntar
+from services.gemini_service import gemini_service
 
 
 # ============================================================
@@ -157,6 +158,36 @@ def crear_gemini_widget():
                         className="gemini-fuente-area",
                     ),
 
+                    html.Div(
+                        [
+                            html.Button(
+                                [
+                                    html.I(className="fa-solid fa-graduation-cap", style={"marginRight": "6px", "color": "#f59e0b"}),
+                                    "Comprobar Entendimiento (Defensa Socrática)",
+                                ],
+                                id="gemini-btn-socratico",
+                                className="gemini-socratico-btn",
+                                title="Iniciar una pregunta de defensa de laboratorio",
+                                style={
+                                    "background": "rgba(245, 158, 11, 0.12)",
+                                    "border": "1px solid rgba(245, 158, 11, 0.35)",
+                                    "color": "#f59e0b",
+                                    "fontSize": "11px",
+                                    "fontWeight": "700",
+                                    "borderRadius": "8px",
+                                    "padding": "6px 12px",
+                                    "cursor": "pointer",
+                                    "width": "100%",
+                                    "marginBottom": "8px",
+                                    "display": "flex",
+                                    "alignItems": "center",
+                                    "justifyContent": "center",
+                                },
+                            ),
+                        ],
+                        style={"padding": "0 14px"},
+                    ),
+
                     # =================================================
                     # CAJA DE ESCRITURA
                     # =================================================
@@ -165,7 +196,7 @@ def crear_gemini_widget():
                         [
                             dcc.Textarea(
                                 id="gemini-input",
-                                placeholder="Escribe tu pregunta... Ej.: Según el libro base, ¿qué es la reconstrucción?",
+                                placeholder="Escribe tu pregunta o responde la defensa socrática...",
                                 className="gemini-input",
                                 rows=2,
                             ),
@@ -179,6 +210,8 @@ def crear_gemini_widget():
                         ],
                         className="gemini-input-area",
                     ),
+
+                    dcc.Store(id="gemini-modo-socratico", data=False),
 
                 ],
                 id="gemini-panel",
@@ -233,124 +266,109 @@ def registrar_gemini_callbacks(app):
 
 
     # ========================================================
-    # ENVIAR PREGUNTA
+    # ENVIAR PREGUNTA O DEFENDER SOCRÁTICAMENTE
     # ========================================================
 
     @app.callback(
         Output("gemini-conversacion", "children"),
         Output("gemini-input", "value"),
+        Output("gemini-modo-socratico", "data"),
 
         Input("gemini-enviar", "n_clicks"),
+        Input("gemini-btn-socratico", "n_clicks"),
 
         State("gemini-input", "value"),
         State("gemini-conversacion", "children"),
         State("gemini-fuente", "value"),
+        State("gemini-modo-socratico", "data"),
 
         prevent_initial_call=True,
     )
-    def enviar_pregunta(
-        n_clicks,
+    def gestionar_interaccion_gemini(
+        n_enviar,
+        n_socratico,
         pregunta,
         conversacion,
         fuente,
+        en_modo_socratico,
     ):
-
-        # ----------------------------------------------------
-        # Validar pregunta
-        # ----------------------------------------------------
-
-        if not pregunta or not pregunta.strip():
+        ctx = dash.callback_context
+        if not ctx.triggered:
             raise PreventUpdate
 
-        pregunta = pregunta.strip()
-
-        if not fuente:
-            fuente = "todas"
-
-        # ----------------------------------------------------
-        # Si no existe conversación, crear lista
-        # ----------------------------------------------------
-
+        disparador = ctx.triggered[0]["prop_id"].split(".")[0]
         if conversacion is None:
             conversacion = []
 
         # ----------------------------------------------------
-        # Mensaje del estudiante
+        # 1. Caso: Disparar Reto Socrático
         # ----------------------------------------------------
+        if disparador == "gemini-btn-socratico":
+            reto = gemini_service.generar_reto_socratico("Tomografía Computarizada")
+            mensaje_reto = html.Div(
+                [
+                    html.Div(
+                        [
+                            html.I(className="fa-solid fa-graduation-cap", style={"color": "#f59e0b"}),
+                            html.Span(" Defensa Socrática", style={"fontWeight": "700", "marginLeft": "6px", "color": "#f59e0b"}),
+                        ],
+                        className="gemini-avatar",
+                        style={"background": "rgba(245,158,11,0.15)", "width": "auto", "padding": "4px 10px", "borderRadius": "12px"}
+                    ),
+                    html.Div(
+                        [
+                            html.Div("Evaluador de Laboratorio", className="gemini-mensaje-titulo", style={"color": "#f59e0b"}),
+                            html.Div(reto, className="gemini-mensaje-texto"),
+                        ]
+                    ),
+                ],
+                className="gemini-mensaje",
+                style={"border": "1px solid rgba(245,158,11,0.3)", "borderRadius": "10px", "padding": "10px", "background": "rgba(245,158,11,0.05)"}
+            )
+            return conversacion + [mensaje_reto], "", True
+
+        # ----------------------------------------------------
+        # 2. Caso: Enviar Respuesta o Pregunta Normal
+        # ----------------------------------------------------
+        if not pregunta or not pregunta.strip():
+            raise PreventUpdate
+
+        pregunta = pregunta.strip()
+        if not fuente:
+            fuente = "todas"
 
         mensaje_usuario = html.Div(
             [
-                html.Div(
-                    "Tú",
-                    className="gemini-mensaje-usuario-titulo",
-                ),
-
-                html.Div(
-                    pregunta,
-                    className="gemini-mensaje-usuario",
-                ),
+                html.Div("Tú", className="gemini-mensaje-usuario-titulo"),
+                html.Div(pregunta, className="gemini-mensaje-usuario"),
             ],
             className="gemini-mensaje-usuario-contenedor",
         )
 
-        # ----------------------------------------------------
-        # Consultar Gemini con recuperación documental
-        # ----------------------------------------------------
-
         try:
-            respuesta = preguntar(
-                pregunta,
-                fuente=fuente,
-            )
-
-            if not respuesta:
-                respuesta = (
-                    "No se recibió una respuesta de Gemini. "
-                    "Intenta nuevamente."
-                )
-
+            if en_modo_socratico:
+                respuesta = gemini_service.evaluar_defensa_socratica(pregunta, "Tomografía Computarizada")
+            else:
+                respuesta = preguntar(pregunta, fuente=fuente)
+                if not respuesta:
+                    respuesta = "No se recibió una respuesta de Gemini. Intenta nuevamente."
         except Exception as error:
-
-            respuesta = (
-                "[ERROR] No se pudo obtener una respuesta de Gemini.\n\n"
-                f"Detalle: {error}"
-            )
-
-        # ----------------------------------------------------
-        # Mensaje de Gemini
-        # ----------------------------------------------------
+            respuesta = f"[ERROR] No se pudo obtener respuesta de Gemini.\n\nDetalle: {error}"
 
         mensaje_gemini = html.Div(
             [
                 html.Div(
-                    html.I(className="fa-solid fa-wand-magic-sparkles"),
+                    html.I(className="fa-solid fa-graduation-cap" if en_modo_socratico else "fa-solid fa-wand-magic-sparkles"),
                     className="gemini-avatar",
                 ),
-
                 html.Div(
                     [
-                        html.Div(
-                            "Gemini",
-                            className="gemini-mensaje-titulo",
-                        ),
-
-                        html.Div(
-                            respuesta,
-                            className="gemini-mensaje-texto",
-                        ),
+                        html.Div("Evaluador Socrático" if en_modo_socratico else "Gemini", className="gemini-mensaje-titulo"),
+                        html.Div(respuesta, className="gemini-mensaje-texto"),
                     ]
                 ),
             ],
             className="gemini-mensaje",
         )
 
-        # ----------------------------------------------------
-        # Agregar ambos mensajes al historial
-        # ----------------------------------------------------
-
-        nueva_conversacion = conversacion + [
-            mensaje_usuario,
-            mensaje_gemini,
-        ]
-
-        return nueva_conversacion, ""
+        return conversacion + [mensaje_usuario, mensaje_gemini], "", False
